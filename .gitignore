@@ -1,0 +1,14 @@
+node_modules/
+.env
+server/.env
+dist/
+build/
+*.log
+.DS_Store
+uploads/
+server/uploads/*
+!server/uploads/.gitkeep
+.vite/
+*.swp
+*.swo
+*~

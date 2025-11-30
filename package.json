@@ -1,0 +1,22 @@
+{
+  "name": "rdv-saas-app",
+  "version": "1.0.0",
+  "description": "SaaS de gestion de rendez-vous pour centres de lavage auto",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "seed": "cd server && npm run seed",
+    "setup": "npm run install:all && npm run docker:up && sleep 5 && npm run seed"
+  },
+  "keywords": ["saas", "booking", "appointment", "lavage-auto"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
