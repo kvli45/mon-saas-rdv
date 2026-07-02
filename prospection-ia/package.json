@@ -12,7 +12,9 @@
     "mark": "node scripts/mark.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0"
+    "@anthropic-ai/sdk": "^0.90.0",
+    "nodemailer": "^9.0.3",
+    "playwright": "^1.61.1"
   },
   "engines": {
     "node": ">=22.13"

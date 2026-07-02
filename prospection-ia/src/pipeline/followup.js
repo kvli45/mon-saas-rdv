@@ -1,7 +1,9 @@
-import { db, logEvent, sentToday, isSuppressed, setStatus } from '../db.js';
+import { db, logEvent, sentToday, isSuppressed, setStatus, saveEmail } from '../db.js';
 import { config } from '../config.js';
 import { composeEmail } from '../llm.js';
-import { brevoSend, inSendWindow } from './send.js';
+import { sendMail } from '../mailer.js';
+import { inSendWindow, isPaused } from './send.js';
+import { publish } from '../bus.js';
 import { log } from '../log.js';
 
 /**
@@ -9,7 +11,7 @@ import { log } from '../log.js';
  * S'arrête si le lead est passé REPLIED / OPTOUT / BOUNCED (via scripts/mark.js ou webhook).
  */
 export async function followupBatch() {
-  if (!inSendWindow()) return 0;
+  if (isPaused() || !inSendWindow()) return 0;
   const remaining = config.quotas.followupsPerDay - sentToday(['FOLLOWUP']);
   if (remaining <= 0) return 0;
 
@@ -33,17 +35,18 @@ export async function followupBatch() {
     const touchNumber = lead.status === 'CONTACTED' ? 1 : 2;
     try {
       const mail = await composeEmail(lead, { touchNumber });
-      await brevoSend({
-        to: lead.email,
-        toName: lead.name,
-        subject: `Re: ${lead.email_subject}`,
-        body: mail.body,
-      });
+      const subject = `Re: ${lead.email_subject}`;
+      await sendMail({ to: lead.email, toName: lead.name, subject, body: mail.body });
       const next = touchNumber === 1 ? 'FOLLOWUP_1' : 'EXHAUSTED';
       db.prepare(
         `UPDATE leads SET status = ?, last_touch_at = datetime('now'), touches = touches + 1, updated_at = datetime('now') WHERE id = ?`
       ).run(next, lead.id);
       logEvent(lead.id, 'FOLLOWUP', `relance ${touchNumber} → ${lead.email}`);
+      saveEmail({ leadId: lead.id, kind: `relance ${touchNumber}`, to: lead.email, name: lead.name, sector: lead.sector_label, city: lead.city, score: lead.score, subject, body: mail.body });
+      publish('email', {
+        leadId: lead.id, kind: `relance ${touchNumber}`, to: lead.email, name: lead.name,
+        sector: lead.sector_label, city: lead.city, score: lead.score, subject, body: mail.body,
+      });
       log(`🔁 Relance ${touchNumber} envoyée à ${lead.name} <${lead.email}>`);
       sent++;
       await new Promise((r) => setTimeout(r, 45_000 + Math.random() * 60_000));

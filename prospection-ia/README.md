@@ -1,98 +1,95 @@
-# 🤖 CleanTech Prospector — Prospection B2B autonome par IA
+# 🤖 CleanTech Prospector — Prospection B2B autonome par IA + Dashboard temps réel
 
-Pipeline de prospection qui tourne **24h/24** pour vendre les produits CleanTech aux professionnels de l'auto (detailers, centres de lavage, garages, carrossiers, négociants VO, loueurs, flottes VTC).
+Pipeline qui tourne **en local sur ton PC** pour vendre les produits CleanTech aux pros de l'auto (detailers, lavages, garages, carrossiers, négociants VO, loueurs, flottes VTC). Scraping web, qualification par IA, cold emails personnalisés via **ton Gmail**, relances automatiques — le tout piloté depuis un **dashboard temps réel**.
 
-## Ce que ça fait, en boucle
+![pipeline](https://img.shields.io/badge/pipeline-scrape→qualify→email→relance-blue)
+
+## La pipeline, en boucle
 
 ```
- SOURCING ──► ENRICHISSEMENT ──► QUALIFICATION IA ──► COLD EMAIL PERSO ──► RELANCES J+3/J+7
- Google Places   visite le site      Claude score         Claude rédige        auto, stop si
- (secteur×ville   du prospect,        chaque lead 0-100    un email unique      réponse/opt-out
-  en rotation)    trouve l'email      et filtre            par secteur+hooks
+ SCRAPING ──► ENRICHISSEMENT ──► QUALIFICATION IA ──► COLD EMAIL PERSO ──► RELANCES J+3/J+7
+ recherche web    Playwright         Claude score        Claude rédige        auto, stop si
+ (ou Google        (anti-bot, JS,     0-100 + accroches   un email unique      réponse/opt-out
+  Places)          emails obfusqués)  filtre la qualité   par secteur+hooks
 ```
 
-1. **Sourcing** — interroge Google Places pour chaque couple *secteur × ville* (8 secteurs × 36 villes, rotation persistante — modifiable dans `src/config.js`).
-2. **Enrichissement** — visite le site du prospect (accueil, /contact, /mentions-légales), extrait l'email et un texte de personnalisation. Fallback Hunter.io optionnel.
-3. **Qualification IA** — Claude évalue chaque lead (activité pertinente ? entreprise active ? taille joignable ?), attribue un score 0-100, **rejette** sous le seuil et extrait des **accroches concrètes** pour la personnalisation.
-4. **Cold email** — Claude rédige un email **unique par prospect** : première phrase ancrée dans LEUR réalité (hooks), argumentaire adapté au **secteur** (detailer ≠ garage ≠ loueur), code promo, 90-130 mots, vouvoiement.
-5. **Relances** — J+3 puis J+7 (paramétrable), ton différent à chaque relance, arrêt automatique si réponse / opt-out / bounce.
+1. **Scraping / Sourcing** — trouve les entreprises par recherche web (gratuit, aucun compte) ou via Google Places si tu fournis une clé.
+2. **Enrichissement** — un **navigateur furtif Playwright** (masque les signaux d'automatisation, rend le JS, scrolle) visite chaque site : accueil, /contact, /mentions-légales. Il extrait les emails même **obfusqués** (`nom [at] domaine [dot] fr`, entités HTML, `mailto:`) et les **score par qualité** (email du même domaine + `contact@`/`direction@` = ultra qualifié ; `noreply`/`rgpd` écartés).
+3. **Qualification IA** — Claude note chaque lead (activité pertinente ? actif ? joignable ?), **rejette** sous le seuil, et extrait des **accroches concrètes** pour la personnalisation.
+4. **Cold email** — Claude rédige un email **unique** : 1ère phrase ancrée dans LEUR réalité, argument adapté au **secteur**, code promo, vouvoiement. Envoyé via **ton SMTP Gmail**.
+5. **Relances** — J+3 puis J+7, ton différent à chaque fois, arrêt automatique si réponse/opt-out.
 
-### Garde-fous intégrés (ne pas désactiver)
-- **Quotas** : 20 nouveaux emails + 20 relances / jour par défaut. *Monter progressivement* (semaine 1 : 20, semaine 2 : 35, semaine 3 : 50…) pour préserver la réputation du domaine.
-- **Fenêtre d'envoi** : jours ouvrés, 9h-18h Paris, 45s-2min de délai aléatoire entre chaque envoi.
-- **Liste de suppression** : tout opt-out ("STOP") ou bounce est définitivement exclu.
-- **Mention opt-out RGPD** ajoutée en pied de chaque email (la prospection B2B est légale en France si l'email est professionnel, en lien avec l'activité, avec possibilité d'opposition).
+## 🖥️ Dashboard temps réel (`http://localhost:4300`)
+
+- **KPIs du jour** : sourcés, emails trouvés, qualifiés, cold emails, relances, réponses
+- **Flux de décision en direct** (SSE) : chaque scrape, chaque score IA, chaque envoi apparaît en temps réel
+- **Entonnoir pipeline** : où en sont tous tes leads
+- **Section Emails envoyés** : chaque email, cliquable pour lire le corps complet
+- **Table Leads** : recherche + filtre, boutons ✅ Réponse / 🚫 STOP
+- **Boutons** : ⚡ Scraper maintenant · ⏸️ Pause/Reprendre les envois
 
 ## Installation (10 min)
 
 ```bash
 cd prospection-ia
 npm install
-cp .env.example .env
-# puis remplis .env :
+npx playwright install chromium     # navigateur pour le scraping
+cp .env.example .env                 # puis remplis (voir ci-dessous)
+npm start                            # lance la boucle + le dashboard
 ```
 
-| Clé | Où l'obtenir | Coût |
+Ouvre **http://localhost:4300**.
+
+### Configuration `.env`
+
+| Clé | Comment l'obtenir | Obligatoire ? |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | platform.claude.com | ~0,05-0,15 €/lead qualifié+contacté (Opus) |
-| `GOOGLE_PLACES_API_KEY` | console.cloud.google.com → activer **Places API (New)** | 200 $/mois offerts ≈ 6 000 recherches |
-| `BREVO_API_KEY` | app.brevo.com → SMTP & API | Gratuit jusqu'à 300 emails/jour |
-| `HUNTER_API_KEY` *(optionnel)* | hunter.io | 25 recherches/mois gratuites |
+| `ANTHROPIC_API_KEY` | platform.claude.com | ✅ |
+| `GMAIL_USER` | ton adresse Gmail | ✅ |
+| `GMAIL_APP_PASSWORD` | **mot de passe d'application** (voir ci-dessous) | ✅ |
+| `GOOGLE_PLACES_API_KEY` | console.cloud.google.com → Places API (New) | ❌ (sinon recherche web) |
+| `HUNTER_API_KEY` | hunter.io (25 gratuits/mois) | ❌ |
 
-⚠️ **Avant le premier envoi** : configure **SPF, DKIM et DMARC** sur ton domaine dans Brevo (Réglages → Expéditeurs & domaines). Sans ça, tes emails finissent en spam. Idéalement, utilise un domaine dédié (ex. `cleantech-pro.fr`) pour protéger le domaine principal.
+**🔑 Mot de passe d'application Gmail** (ce n'est PAS ton mot de passe habituel) :
+1. myaccount.google.com → **Sécurité** → active la **validation en 2 étapes**
+2. → **Mots de passe des applications** → crée-en un → colle-le dans `GMAIL_APP_PASSWORD`
 
-## Lancement
+**🧪 Tester sans rien envoyer** : mets `DRY_RUN=1` — la pipeline tourne, compose les vrais emails, tu les vois dans le dashboard, mais **rien n'est envoyé**. Passe à `DRY_RUN=0` quand tu es prêt.
 
-```bash
-npm start          # boucle 24h/24
-npm run once       # un seul cycle (pour tester)
-npm run report     # état du pipeline
-```
+## Faire tourner sur ton PC les premiers jours
 
-### Tourner 24h/24 pour de vrai
-Le process doit vivre sur une machine allumée en permanence — un VPS à 5 €/mois suffit (Hetzner, OVH, Scaleway). Avec pm2 :
+Laisse simplement `npm start` ouvert dans un terminal (garde le PC allumé). Le dashboard reste dispo. Regarde les résultats s'accumuler.
 
-```bash
-npm i -g pm2
-pm2 start src/index.js --name prospector
-pm2 save && pm2 startup   # relance auto au reboot
-pm2 logs prospector       # suivre l'activité
-```
+- **Gmail limite ~500 emails/jour**, mais commence **bas** : `MAX_NEW_EMAILS_PER_DAY=20` la 1ère semaine (réputation d'envoi). Monte progressivement.
+- ⚠️ **Délivrabilité** : configure **SPF/DKIM/DMARC** sur ton domaine si tu envoies depuis une adresse pro. Depuis un `@gmail.com`, c'est déjà signé, mais évite les envois massifs (Gmail te bloquerait).
 
-## Gestion quotidienne (2 min/jour)
+Quand tu vois que ça convertit → tu passes sur un VPS 24h/24 (`pm2 start src/index.js`).
 
-- **Quelqu'un répond ?** 🎉 Stoppe ses relances puis traite la vente à la main :
-  ```bash
-  npm run mark -- replied contact@garage-dupont.fr
-  ```
-- **Quelqu'un dit STOP ?** `npm run mark -- optout email@...` (suppression définitive)
-- **Email invalide ?** `npm run mark -- bounced email@...`
-- **Importer tes propres leads** (salon, annuaire, réseau) :
-  ```bash
-  npm run import -- mes-leads.csv    # colonnes: name,sector_label,city,email,website,phone
-  ```
+## Gestion quotidienne (depuis le dashboard)
 
-## Régler la machine
+- Un prospect répond → clique **✅ Réponse** sur sa ligne (stoppe ses relances, à toi de conclure 🤝)
+- Quelqu'un dit STOP → **🚫 STOP** (suppression définitive)
+- En ligne de commande aussi : `npm run mark -- replied contact@x.fr`
+- Importer tes propres leads : `npm run import -- mes-leads.csv` (colonnes `name,sector_label,city,email,website,phone`)
 
-Tout est dans `.env` et `src/config.js` :
+## Réglages (`.env` et `src/config.js`)
+
 - **Secteurs & villes** : tableaux `SECTORS` / `CITIES` dans `src/config.js`
-- **Seuil de qualification** : `MIN_QUALIFY_SCORE` (60 par défaut ; monte à 75 pour ne contacter que la crème)
+- **Sévérité IA** : `MIN_QUALIFY_SCORE` (60 → 75 pour ne garder que la crème)
 - **Volume** : `MAX_NEW_EMAILS_PER_DAY` / `MAX_FOLLOWUPS_PER_DAY`
-- **Coût IA** : `QUALIFY_MODEL=claude-haiku-4-5` divise le coût de qualification par ~5 (garde `COMPOSE_MODEL=claude-opus-4-8` : la qualité de rédaction fait le taux de réponse)
-- **Le pitch des emails** : prompts dans `src/llm.js` (`QUALIFY_SYSTEM` / `COMPOSE_SYSTEM`)
+- **Coût IA** : `QUALIFY_MODEL=claude-haiku-4-5` (÷5 sur la qualif ; garde Opus pour la rédaction)
+- **Le pitch** : prompts dans `src/llm.js`
 
-## Données
-
-Tout vit dans `prospector.db` (SQLite, dans ce dossier). Statuts d'un lead :
+## Statuts d'un lead
 
 ```
 NEW → ENRICHED → QUALIFIED → CONTACTED → FOLLOWUP_1 → EXHAUSTED
          │            │
-         └ NO_EMAIL   └ REJECTED          + terminaux : REPLIED 🎉, OPTOUT, BOUNCED
+         └ NO_EMAIL   └ REJECTED     + terminaux : REPLIED 🎉, OPTOUT, BOUNCED
 ```
 
-## Limites connues / v2 possibles
+## Notes légales & limites
 
-- **Détection des réponses** : manuelle pour l'instant (`npm run mark`). V2 : webhook Brevo (bounces/spam auto) + lecture IMAP de la boîte pour détecter les réponses et même y répondre avec l'IA.
-- **Un seul canal** (email). V2 : ajouter un appel automatique de suivi, LinkedIn, SMS.
-- **Le sourcing dépend de Google Places** : certains pros n'ont pas de site → pas d'email trouvable → statut `NO_EMAIL` (relançables par téléphone, liste via `npm run report`).
+- **Prospection B2B** : légale en France si l'email est **professionnel**, en lien avec l'activité, avec **droit d'opposition** — le pied opt-out RGPD est ajouté à chaque email, et tout "STOP" est exclu définitivement.
+- **Scraping** : ne collecte que des **coordonnées professionnelles publiques**. Reste raisonnable sur le volume et respecte les CGU des sites.
+- **Détection des réponses** : manuelle pour l'instant (bouton dashboard). V2 possible : webhook + lecture IMAP de ta boîte pour auto-marquer les réponses (et y répondre à l'IA).

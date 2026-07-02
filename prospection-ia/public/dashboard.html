@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CleanTech Prospector — Dashboard</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#131a26; --panel2:#0f1520; --line:#1e2838; --ink:#e6ecf5;
+    --mut:#8091a8; --blue:#3b82f6; --cyan:#22d3ee; --green:#22c55e; --amber:#f59e0b;
+    --red:#ef4444; --violet:#a78bfa; --pink:#ec4899;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif}
+  a{color:var(--cyan);text-decoration:none}
+  .bar{display:flex;align-items:center;gap:14px;padding:12px 20px;background:linear-gradient(180deg,#16202f,#0e1420);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+  .bar h1{font-size:16px;margin:0;font-weight:800;letter-spacing:.3px}
+  .bar h1 span{color:var(--cyan)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}
+  .dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .pill{font-size:11px;padding:4px 10px;border-radius:20px;background:#1b2534;border:1px solid var(--line);color:var(--mut)}
+  .pill.ok{color:var(--green);border-color:#1e3a2a}
+  .pill.warn{color:var(--amber);border-color:#3a2f1a}
+  .spacer{flex:1}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#1b2534;color:var(--ink);padding:7px 14px;border-radius:8px}
+  button:hover{border-color:var(--blue)}
+  button.primary{background:var(--blue);border-color:var(--blue);font-weight:600}
+  button.warn{background:#3a2f1a;border-color:#5a4a20;color:var(--amber)}
+  .wrap{padding:18px 20px;max-width:1500px;margin:0 auto}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .kpi .n{font-size:26px;font-weight:800}
+  .kpi .l{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+  .kpi.b .n{color:var(--cyan)} .kpi.g .n{color:var(--green)} .kpi.v .n{color:var(--violet)}
+  .kpi.a .n{color:var(--amber)} .kpi.p .n{color:var(--pink)}
+  .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}
+  .card h2{font-size:13px;margin:0;padding:12px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;color:#cdd9ea}
+  .card h2 .cnt{margin-left:auto;font-size:11px;color:var(--mut);font-weight:400}
+  .feed{max-height:520px;overflow:auto}
+  .ev{display:flex;gap:10px;padding:9px 15px;border-bottom:1px solid #161f2c;font-size:13px;align-items:flex-start}
+  .ev:hover{background:var(--panel2)}
+  .tag{flex:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.03em;margin-top:1px}
+  .t-SOURCED{background:#1b2a3f;color:#7db3ff}.t-ENRICHED{background:#132c2a;color:#5ee0c8}
+  .t-QUALIFIED{background:#12301d;color:#5bd77f}.t-REJECTED{background:#2f1a1a;color:#ff8a8a}
+  .t-SENT{background:#251b3a;color:#c0a6ff}.t-FOLLOWUP{background:#2a2540;color:#b9a8f0}
+  .t-REPLIED{background:#3a2540;color:#f5a8d8}.t-OPTOUT,.t-BOUNCED,.t-ERROR{background:#2a2020;color:#e0a0a0}
+  .t-log{background:#1a2230;color:#8aa}.t-scraper{background:#132433;color:#6cc8e6}
+  .ev .m{flex:1;min-width:0}
+  .ev .m b{color:var(--ink)} .ev .m .s{color:var(--mut);font-size:12px}
+  .ev .ti{flex:none;color:#546} .ev .score{flex:none;font-weight:800}
+  .sc-hi{color:var(--green)} .sc-mid{color:var(--amber)} .sc-lo{color:var(--red)}
+  .emails{max-height:520px;overflow:auto}
+  .em{padding:11px 15px;border-bottom:1px solid #161f2c;cursor:pointer}
+  .em:hover{background:var(--panel2)}
+  .em .top{display:flex;gap:8px;align-items:center}
+  .em .k{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;background:#251b3a;color:#c0a6ff}
+  .em .k.relance{background:#2a2540;color:#b9a8f0}
+  .em .subj{font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .em .to{font-size:12px;color:var(--mut);margin-top:2px}
+  .em .body{display:none;white-space:pre-wrap;margin-top:9px;padding:11px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;font-size:13px;color:#cdd9ea}
+  .em.open .body{display:block}
+  .funnel{display:flex;flex-direction:column;gap:7px;padding:14px 15px}
+  .frow{display:flex;align-items:center;gap:10px;font-size:12px}
+  .frow .lab{width:130px;color:var(--mut)} .frow .bar2{flex:1;height:18px;background:var(--panel2);border-radius:5px;overflow:hidden}
+  .frow .fill{height:100%;border-radius:5px;min-width:2px} .frow .v{width:44px;text-align:right;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:9px 12px;color:var(--mut);font-size:11px;text-transform:uppercase;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+  td{padding:9px 12px;border-bottom:1px solid #161f2c}
+  tr:hover td{background:var(--panel2)}
+  .st{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px}
+  .toolbar{display:flex;gap:8px;padding:10px 15px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  input,select{font:inherit;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:6px 10px;border-radius:8px}
+  .mini{font-size:11px;padding:3px 8px}
+  .tbl-wrap{max-height:460px;overflow:auto}
+  .muted{color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="bar">
+  <div class="dot" id="live"></div>
+  <h1>Clean<span>Tech</span> Prospector</h1>
+  <span class="pill" id="mailer">SMTP…</span>
+  <span class="pill" id="modePill"></span>
+  <div class="spacer"></div>
+  <button class="primary" onclick="scrape()">⚡ Scraper maintenant</button>
+  <button id="pauseBtn" class="warn" onclick="togglePause()">⏸️ Pause envois</button>
+</div>
+
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>🧠 Flux de décision — temps réel <span class="cnt" id="feedCnt">0</span></h2>
+        <div class="feed" id="feed"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>📈 Pipeline</h2>
+        <div class="funnel" id="funnel"></div>
+      </div>
+      <div class="card">
+        <h2>📧 Emails envoyés <span class="cnt" id="emCnt">0</span></h2>
+        <div class="emails" id="emails"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🎯 Leads</h2>
+    <div class="toolbar">
+      <input id="q" placeholder="Rechercher nom / ville / email…" oninput="loadLeads()">
+      <select id="statusFilter" onchange="loadLeads()">
+        <option value="">Tous les statuts</option>
+        <option>QUALIFIED</option><option>CONTACTED</option><option>FOLLOWUP_1</option>
+        <option>EXHAUSTED</option><option>REPLIED</option><option>ENRICHED</option>
+        <option>NEW</option><option>NO_EMAIL</option><option>REJECTED</option>
+      </select>
+      <span class="muted" id="leadCnt" style="align-self:center"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Entreprise</th><th>Secteur</th><th>Ville</th><th>Score</th><th>Email</th><th>Statut</th><th></th></tr></thead>
+        <tbody id="leads"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const stColor = { QUALIFIED:'#12301d;color:#5bd77f', CONTACTED:'#251b3a;color:#c0a6ff', FOLLOWUP_1:'#2a2540;color:#b9a8f0',
+  EXHAUSTED:'#20283a;color:#8ea', REPLIED:'#3a2540;color:#f5a8d8', REJECTED:'#2f1a1a;color:#ff8a8a',
+  ENRICHED:'#132c2a;color:#5ee0c8', NEW:'#1b2a3f;color:#7db3ff', NO_EMAIL:'#262020;color:#c0a0a0',
+  OPTOUT:'#2a2020;color:#e0a0a0', BOUNCED:'#2a2020;color:#e0a0a0' };
+const scCls = (n) => n>=75?'sc-hi':n>=55?'sc-mid':'sc-lo';
+
+let feedN = 0;
+function addFeed(e){
+  const feed = $('#feed');
+  const row = document.createElement('div'); row.className='ev';
+  let tag, main, extra='';
+  if(e.kind==='qualify'){
+    tag = e.decision==='accept'?'QUALIFIED':'REJECTED';
+    main = `<b>${esc(e.name)}</b> <span class="s">· ${esc(e.sector)} · ${esc(e.city)}</span><br><span class="s">${esc(e.reason)}</span>`;
+    extra = `<div class="score ${scCls(e.score)}">${e.score}</div>`;
+  } else if(e.kind==='email'){
+    tag='SENT'; main=`<b>📧 ${esc(e.name)}</b> <span class="s">· ${esc(e.kind)}</span><br><span class="s">« ${esc(e.subject)} » → ${esc(e.to)}</span>`;
+  } else if(e.kind==='event'){
+    tag=e.type; const nm = e.lead?`<b>${esc(e.lead.name)}</b> ` : '';
+    main = `${nm}<span class="s">${esc(e.detail||'')}</span>`;
+  } else if(e.kind==='scraper'){
+    tag='scraper'; main=`<span class="s">🕷️ ${esc(e.msg)}</span>`;
+  } else if(e.kind==='log'){
+    if(e.level!=='error' && /Sourcing|cycle/i.test(e.msg)===false && Math.random()>0.4) return;
+    tag='log'; main=`<span class="s">${esc(e.msg)}</span>`;
+  } else if(e.kind==='mail_dryrun'){
+    tag='SENT'; main=`<span class="s">🧪 (simulation) ${esc(e.subject)} → ${esc(e.to)}</span>`;
+  } else return;
+  const ti = new Date(e.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  row.innerHTML = `<span class="tag t-${(tag||'log').replace('_1','')}">${tag}</span><div class="m">${main}</div>${extra}<span class="ti">${ti}</span>`;
+  feed.prepend(row);
+  while(feed.children.length>200) feed.lastChild.remove();
+  $('#feedCnt').textContent = (++feedN);
+}
+
+// SSE
+function connect(){
+  const es = new EventSource('/api/stream');
+  es.onopen = () => $('#live').classList.add('on');
+  es.onerror = () => $('#live').classList.remove('on');
+  es.onmessage = (m) => { try{ const e=JSON.parse(m.data); addFeed(e);
+    if(e.kind==='email'||e.kind==='qualify'||e.kind==='event'){ refreshStats(); if(e.kind==='email') loadEmails(); }
+  }catch{} };
+}
+
+async function refreshStats(){
+  const s = await fetch('/api/stats').then(r=>r.json());
+  const t = s.today||{}, c = s.counts||{};
+  const kpi = (cls,n,l)=>`<div class="kpi ${cls}"><div class="n">${n||0}</div><div class="l">${l}</div></div>`;
+  $('#kpis').innerHTML =
+    kpi('b', t.SOURCED, 'Leads sourcés (jour)') + kpi('', t.ENRICHED, 'Emails trouvés') +
+    kpi('g', t.QUALIFIED, 'Qualifiés IA') + kpi('v', t.SENT, `Cold emails (${s.sentTodayNew||0}/${s.quotas.newPerDay})`) +
+    kpi('a', t.FOLLOWUP, 'Relances') + kpi('p', c.REPLIED, 'Réponses 🎉');
+
+  const order=[['NEW','À enrichir','#7db3ff'],['ENRICHED','À qualifier','#5ee0c8'],['QUALIFIED','Prêts à contacter','#5bd77f'],
+    ['CONTACTED','Contactés','#c0a6ff'],['FOLLOWUP_1','Relance 1','#b9a8f0'],['EXHAUSTED','Séquence finie','#8ea'],
+    ['REPLIED','Réponses','#f5a8d8'],['NO_EMAIL','Sans email','#c0a0a0'],['REJECTED','Rejetés','#ff8a8a']];
+  const max = Math.max(1,...order.map(([k])=>c[k]||0));
+  $('#funnel').innerHTML = order.map(([k,l,col])=>
+    `<div class="frow"><span class="lab">${l}</span><div class="bar2"><div class="fill" style="width:${(c[k]||0)/max*100}%;background:${col}"></div></div><span class="v">${c[k]||0}</span></div>`).join('');
+
+  const m=s.mailer||{};
+  $('#mailer').textContent = (m.ok?'✅ ':'⚠️ ')+(m.mode||'');
+  $('#mailer').className = 'pill '+(m.ok?'ok':'warn');
+  $('#modePill').textContent = s.dryRun?'🧪 DRY_RUN (simulation)':(s.paused?'⏸️ En pause':'▶️ Actif');
+  $('#modePill').className = 'pill '+(s.dryRun?'warn':(s.paused?'warn':'ok'));
+  $('#pauseBtn').textContent = s.paused?'▶️ Reprendre':'⏸️ Pause envois';
+  window._paused = s.paused;
+}
+
+async function loadEmails(){
+  const rows = await fetch('/api/emails').then(r=>r.json());
+  $('#emCnt').textContent = rows.length;
+  $('#emails').innerHTML = rows.map(e=>`
+    <div class="em" onclick="this.classList.toggle('open')">
+      <div class="top"><span class="k ${/relance/.test(e.kind)?'relance':''}">${esc(e.kind)}</span><span class="subj">${esc(e.subject)}</span></div>
+      <div class="to">${esc(e.to_name)} &lt;${esc(e.to_email)}&gt; · ${esc(e.sector||'')} · ${esc(e.city||'')} ${e.score?'· score '+e.score:''}</div>
+      <div class="body">${esc(e.body)}</div>
+    </div>`).join('') || '<div class="em muted">Aucun email envoyé pour l’instant.</div>';
+}
+
+async function loadLeads(){
+  const q = $('#q').value, st = $('#statusFilter').value;
+  const rows = await fetch(`/api/leads?q=${encodeURIComponent(q)}&status=${st}`).then(r=>r.json());
+  $('#leadCnt').textContent = rows.length+' leads';
+  $('#leads').innerHTML = rows.map(l=>`
+    <tr>
+      <td>${l.website?`<a href="${esc(l.website)}" target="_blank">${esc(l.name)}</a>`:esc(l.name)}</td>
+      <td class="muted">${esc(l.sector_label||'')}</td><td>${esc(l.city||'')}</td>
+      <td>${l.score!=null?`<b class="${scCls(l.score)}">${l.score}</b>`:'<span class="muted">—</span>'}</td>
+      <td class="muted">${esc(l.email||'—')}</td>
+      <td><span class="st" style="background:${stColor[l.status]||'#222'}">${l.status}</span></td>
+      <td>${['CONTACTED','FOLLOWUP_1','EXHAUSTED'].includes(l.status)?
+        `<button class="mini" onclick="mark(${l.id},'replied')">✅ Réponse</button> <button class="mini" onclick="mark(${l.id},'optout')">🚫 STOP</button>`:''}</td>
+    </tr>`).join('');
+}
+
+async function mark(id,action){ await fetch('/api/mark',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action})}); loadLeads(); refreshStats(); }
+async function scrape(){ await fetch('/api/scrape',{method:'POST'}); }
+async function togglePause(){ await fetch('/api/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paused:!window._paused})}); refreshStats(); }
+
+connect(); refreshStats(); loadEmails(); loadLeads();
+setInterval(refreshStats, 6000);
+setInterval(loadLeads, 15000);
+</script>
+</body>
+</html>

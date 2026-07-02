@@ -1,6 +1,7 @@
 import { db, setStatus, logEvent } from '../db.js';
 import { config } from '../config.js';
 import { qualifyLead } from '../llm.js';
+import { publish } from '../bus.js';
 import { log } from '../log.js';
 
 /** Qualification IA : Claude score chaque lead enrichi et décide accept/reject. */
@@ -17,6 +18,11 @@ export async function qualifyBatch(limit = 6) {
         `UPDATE leads SET score = ?, qualify_reason = ?, hooks = ?, status = ?, updated_at = datetime('now') WHERE id = ?`
       ).run(result.score, result.reason, JSON.stringify(result.hooks || []), ok ? 'QUALIFIED' : 'REJECTED', lead.id);
       logEvent(lead.id, ok ? 'QUALIFIED' : 'REJECTED', `score=${result.score} — ${result.reason}`);
+      publish('qualify', {
+        leadId: lead.id, name: lead.name, sector: lead.sector_label, city: lead.city,
+        score: result.score, decision: ok ? 'accept' : 'reject', reason: result.reason,
+        hooks: result.hooks || [],
+      });
       if (ok) accepted++;
     } catch (err) {
       logEvent(lead.id, 'ERROR', `qualify: ${err.message}`);

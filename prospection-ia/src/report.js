@@ -32,17 +32,17 @@ export function buildReport() {
 }
 
 /** Envoie le rapport quotidien une fois par jour (si DAILY_REPORT_EMAIL configuré). */
-export async function maybeDailyReport(brevoSend) {
+export async function maybeDailyReport(sendMail) {
   const todayKey = new Date().toLocaleDateString('fr-CA', { timeZone: 'Europe/Paris' });
   if (kvGet('last_report') === todayKey) return;
-  const { hour } = { hour: parseInt(new Date().toLocaleString('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', hour12: false }), 10) };
+  const hour = parseInt(new Date().toLocaleString('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', hour12: false }), 10);
   if (hour < 18) return;
   kvSet('last_report', todayKey);
   const report = buildReport();
   log('\n' + report + '\n');
-  if (config.dailyReportEmail && brevoSend) {
+  if (config.dailyReportEmail && sendMail) {
     try {
-      await brevoSend({
+      await sendMail({
         to: config.dailyReportEmail,
         toName: 'Rapport',
         subject: `Prospection ${config.company.name} — rapport du jour`,

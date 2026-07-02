@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { config } from './config.js';
+import { publish } from './bus.js';
 
 export const db = new DatabaseSync(config.dbPath);
 
@@ -50,11 +51,32 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS emails (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER,
+  kind TEXT,               -- cold, relance 1, relance 2
+  to_email TEXT,
+  to_name TEXT,
+  sector TEXT,
+  city TEXT,
+  score INTEGER,
+  subject TEXT,
+  body TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS kv (
   key TEXT PRIMARY KEY,
   value TEXT
 );
 `);
+
+export function saveEmail(e) {
+  db.prepare(
+    `INSERT INTO emails (lead_id, kind, to_email, to_name, sector, city, score, subject, body)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(e.leadId, e.kind, e.to, e.name, e.sector, e.city, e.score ?? null, e.subject, e.body);
+}
 
 export function touch(id) {
   db.prepare(`UPDATE leads SET updated_at = datetime('now') WHERE id = ?`).run(id);
@@ -66,6 +88,8 @@ export function setStatus(id, status) {
 
 export function logEvent(leadId, type, detail = '') {
   db.prepare(`INSERT INTO events (lead_id, type, detail) VALUES (?, ?, ?)`).run(leadId, type, String(detail).slice(0, 500));
+  const lead = leadId ? db.prepare(`SELECT name, city, sector_label FROM leads WHERE id = ?`).get(leadId) : null;
+  publish('event', { leadId, type, detail: String(detail).slice(0, 300), lead });
 }
 
 export function kvGet(key, fallback = null) {
