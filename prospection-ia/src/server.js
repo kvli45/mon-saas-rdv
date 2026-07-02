@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { db, counts, logEvent, suppress } from './db.js';
-import { bus, recent } from './bus.js';
+import { db, counts, logEvent, suppress, draftsReadyCount } from './db.js';
+import { bus, recent, publish } from './bus.js';
 import { verifyMailer } from './mailer.js';
-import { setPaused, isPaused } from './pipeline/send.js';
+import { sendReady, sendAllReady } from './pipeline/send.js';
+import { setScrape, scrapeOn } from './control.js';
 import { log } from './log.js';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -15,43 +16,35 @@ const DASH = fs.readFileSync(path.join(ROOT, 'public', 'dashboard.html'), 'utf8'
 let mailerStatus = { ok: false, mode: 'non vérifié' };
 verifyMailer().then((s) => { mailerStatus = s; });
 
-function json(res, obj, code = 200) {
+const json = (res, obj, code = 200) => {
   const body = JSON.stringify(obj);
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(body);
-}
-
-function readBody(req) {
-  return new Promise((resolve) => {
-    let b = '';
-    req.on('data', (c) => (b += c));
-    req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch { resolve({}); } });
-  });
-}
+};
+const readBody = (req) => new Promise((resolve) => {
+  let b = ''; req.on('data', (c) => (b += c));
+  req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch { resolve({}); } });
+});
 
 function stats() {
   const c = counts();
   const today = Object.fromEntries(
     db.prepare(`SELECT type, COUNT(*) n FROM events WHERE date(created_at)=date('now') GROUP BY type`).all().map((r) => [r.type, r.n])
   );
-  const bySector = db.prepare(
-    `SELECT sector_label AS s, COUNT(*) n, SUM(status='CONTACTED' OR status LIKE 'FOLLOWUP%' OR status='EXHAUSTED' OR status='REPLIED') sent
-     FROM leads GROUP BY sector_label ORDER BY n DESC`
-  ).all();
   return {
-    counts: c, today, bySector,
+    counts: c, today,
     mailer: mailerStatus,
-    paused: isPaused(),
+    scraping: scrapeOn(),
     dryRun: config.mail.dryRun,
     quotas: config.quotas,
+    draftsReady: draftsReadyCount(),
     sentTodayNew: today.SENT || 0,
-    sentTodayFollow: today.FOLLOWUP || 0,
     provider: config.mail.provider,
     company: config.company.name,
   };
 }
 
-export function startServer(onScrape) {
+export function startServer(hooks = {}) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const p = url.pathname;
@@ -61,13 +54,8 @@ export function startServer(onScrape) {
       return res.end(DASH);
     }
 
-    // Flux temps réel (SSE)
     if (p === '/api/stream') {
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
       res.write(': connected\n\n');
       for (const e of recent()) res.write(`data: ${JSON.stringify(e)}\n\n`);
       const onEvt = (e) => res.write(`data: ${JSON.stringify(e)}\n\n`);
@@ -91,38 +79,48 @@ export function startServer(onScrape) {
       return json(res, db.prepare(sql).all(...args));
     }
 
-    if (p === '/api/emails') {
+    // Brouillons PRÊTS à envoyer (email déjà rédigé, en attente de ton clic)
+    if (p === '/api/drafts') {
       return json(res, db.prepare(
-        `SELECT id,lead_id,kind,to_email,to_name,sector,city,score,subject,body,created_at
-         FROM emails ORDER BY id DESC LIMIT 200`
+        `SELECT id,name,sector_label,city,email,score,draft_touch,draft_subject,draft_body
+         FROM leads WHERE draft_body IS NOT NULL ORDER BY draft_touch, score DESC LIMIT 200`
       ).all());
     }
 
-    if (p === '/api/lead') {
-      const id = +url.searchParams.get('id');
-      const lead = db.prepare(`SELECT * FROM leads WHERE id = ?`).get(id);
-      const events = db.prepare(`SELECT type,detail,created_at FROM events WHERE lead_id = ? ORDER BY id`).all(id);
-      return json(res, { lead, events, hooks: JSON.parse(lead?.hooks || '[]') });
+    if (p === '/api/emails') {
+      return json(res, db.prepare(
+        `SELECT id,lead_id,kind,to_email,to_name,sector,city,score,subject,body,created_at FROM emails ORDER BY id DESC LIMIT 200`
+      ).all());
     }
 
-    if (req.method === 'POST' && p === '/api/scrape') {
-      onScrape?.();
-      return json(res, { ok: true, msg: 'Cycle de scraping lancé' });
+    // ---- Contrôle du SCRAPING ----
+    if (req.method === 'POST' && p === '/api/scrape/start') {
+      setScrape(true); log('▶️  Scraping DÉMARRÉ depuis le dashboard'); hooks.onScrapeStart?.();
+      return json(res, { scraping: true });
+    }
+    if (req.method === 'POST' && p === '/api/scrape/stop') {
+      setScrape(false); log('⏹️  Scraping ARRÊTÉ depuis le dashboard');
+      return json(res, { scraping: false });
     }
 
-    if (req.method === 'POST' && p === '/api/pause') {
+    // ---- ENVOI manuel ----
+    if (req.method === 'POST' && p === '/api/send') {
       const b = await readBody(req);
-      setPaused(b.paused);
-      log(b.paused ? '⏸️  Envois mis en pause depuis le dashboard' : '▶️  Envois repris depuis le dashboard');
-      return json(res, { paused: isPaused() });
+      const r = await sendReady(+b.id);
+      return json(res, r, r.ok ? 200 : 400);
+    }
+    if (req.method === 'POST' && p === '/api/send-all') {
+      const r = await sendAllReady((sent, total) => publish('log', { level: 'info', msg: `Envoi groupé : ${sent}/${total}` }));
+      return json(res, r);
     }
 
+    // ---- Marquage lead ----
     if (req.method === 'POST' && p === '/api/mark') {
       const b = await readBody(req);
       const MAP = { replied: 'REPLIED', optout: 'OPTOUT', bounced: 'BOUNCED' };
       const lead = db.prepare(`SELECT * FROM leads WHERE id = ?`).get(+b.id);
       if (!lead || !MAP[b.action]) return json(res, { error: 'invalide' }, 400);
-      db.prepare(`UPDATE leads SET status=?, updated_at=datetime('now') WHERE id=?`).run(MAP[b.action], lead.id);
+      db.prepare(`UPDATE leads SET status=?, draft_body=NULL, draft_subject=NULL, draft_touch=NULL, updated_at=datetime('now') WHERE id=?`).run(MAP[b.action], lead.id);
       logEvent(lead.id, MAP[b.action], 'marqué depuis le dashboard');
       if (b.action !== 'replied' && lead.email) suppress(lead.email, b.action);
       return json(res, { ok: true, status: MAP[b.action] });
@@ -131,8 +129,6 @@ export function startServer(onScrape) {
     res.writeHead(404); res.end('not found');
   });
 
-  server.listen(config.serverPort, () => {
-    log(`🖥️  Dashboard : http://localhost:${config.serverPort}`);
-  });
+  server.listen(config.serverPort, () => log(`🖥️  Dashboard : http://localhost:${config.serverPort}`));
   return server;
 }

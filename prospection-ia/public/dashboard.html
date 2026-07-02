@@ -25,7 +25,11 @@
   button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#1b2534;color:var(--ink);padding:7px 14px;border-radius:8px}
   button:hover{border-color:var(--blue)}
   button.primary{background:var(--blue);border-color:var(--blue);font-weight:600}
+  button.primary.on{background:#3a2f1a;border-color:#5a4a20;color:var(--amber)}
   button.warn{background:#3a2f1a;border-color:#5a4a20;color:var(--amber)}
+  button.send{background:#123222;border-color:#1f5236;color:#5bd77f;font-weight:600}
+  button.send:hover{border-color:var(--green)}
+  button.send:disabled{opacity:.4;cursor:default;color:var(--mut)}
   .wrap{padding:16px 20px;max-width:1560px;margin:0 auto}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:16px}
   .card h2{font-size:13px;margin:0;padding:12px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;color:#cdd9ea}
@@ -64,6 +68,17 @@
   .ev .m{flex:1;min-width:0}.ev .m b{color:var(--ink)}.ev .m .s{color:var(--mut);font-size:12px}
   .ev .ti{flex:none;color:#546}.ev .score{flex:none;font-weight:800}
   .sc-hi{color:var(--green)}.sc-mid{color:var(--amber)}.sc-lo{color:var(--red)}
+  .drafts{max-height:340px;overflow:auto}
+  .dr{display:flex;gap:12px;align-items:flex-start;padding:11px 15px;border-bottom:1px solid #161f2c}
+  .dr:hover{background:var(--panel2)}
+  .dr .info{flex:1;min-width:0;cursor:pointer}
+  .dr .k{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;background:#251b3a;color:#c0a6ff;margin-right:6px}
+  .dr .k.relance{background:#2a2540;color:#b9a8f0}
+  .dr .subj{font-weight:600}
+  .dr .to{font-size:12px;color:var(--mut);margin-top:2px}
+  .dr .body{display:none;white-space:pre-wrap;margin-top:9px;padding:11px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;font-size:13px;color:#cdd9ea}
+  .dr.open .body{display:block}
+  .dr .act{display:flex;gap:6px;flex:none}
   .emails{max-height:420px;overflow:auto}
   .em{padding:11px 15px;border-bottom:1px solid #161f2c;cursor:pointer}.em:hover{background:var(--panel2)}
   .em .top{display:flex;gap:8px;align-items:center}
@@ -89,8 +104,8 @@
   <span class="pill" id="mailer">SMTP…</span>
   <span class="pill" id="modePill"></span>
   <div class="spacer"></div>
-  <button class="primary" onclick="scrape()">⚡ Scraper maintenant</button>
-  <button id="pauseBtn" class="warn" onclick="togglePause()">⏸️ Pause envois</button>
+  <button id="scrapeBtn" class="primary" onclick="toggleScrape()">▶️ Démarrer le scraping</button>
+  <button id="sendAllBtn" class="send" onclick="sendAll()">📤 Tout envoyer (0)</button>
 </div>
 
 <div class="wrap">
@@ -111,6 +126,15 @@
   </div>
 
   <div class="kpis" id="kpis"></div>
+
+  <!-- ================= PRÊTS À ENVOYER ================= -->
+  <div class="card">
+    <h2>✉️ Emails prêts à envoyer — <span style="color:#5bd77f">tu décides quand ça part</span>
+      <span class="cnt" id="draftCnt">0</span>
+      <button class="send mini" style="margin-left:10px" onclick="sendAll()" id="sendAll2">📤 Tout envoyer</button>
+    </h2>
+    <div class="drafts" id="drafts"></div>
+  </div>
 
   <div class="grid">
     <div class="card">
@@ -155,7 +179,7 @@ const NODES = {
   SOURCE:  {x:20,  y:40,  lab:'Sourcing',   sub:'recherche web / Places', ic:'🔎', col:'#22c55e', status:'NEW'},
   ENRICH:  {x:238, y:40,  lab:'Scraping',   sub:'navigateur furtif',      ic:'🕷️', col:'#14b8a6', status:'ENRICHED'},
   QUALIFY: {x:456, y:40,  lab:'Qualif. IA', sub:'Claude · score 0-100',   ic:'🧠', col:'#3b82f6', status:'QUALIFIED'},
-  COMPOSE: {x:674, y:40,  lab:'Rédaction',  sub:'Claude · email perso',   ic:'✍️', col:'#a78bfa', status:null,   statusToday:'SENT'},
+  COMPOSE: {x:674, y:40,  lab:'Prêt à envoyer', sub:'Claude a rédigé',      ic:'✍️', col:'#a78bfa', countKey:'draftsReady'},
   SEND:    {x:892, y:40,  lab:'Envoi',      sub:'Gmail SMTP',             ic:'📧', col:'#8b5cf6', status:'CONTACTED'},
   NOEMAIL: {x:238, y:210, lab:'Sans email', sub:'à appeler',              ic:'📵', col:'#8091a8', status:'NO_EMAIL'},
   REJECT:  {x:456, y:210, lab:'Rejeté',     sub:'hors cible',             ic:'⛔', col:'#ef4444', status:'REJECTED'},
@@ -274,7 +298,8 @@ function connect(){
   es.onopen=()=>$('#live').classList.add('on');
   es.onerror=()=>$('#live').classList.remove('on');
   es.onmessage=(m)=>{ try{ const e=JSON.parse(m.data); animateEvent(e); addFeed(e);
-    if(e.kind==='email'||e.kind==='qualify'||e.kind==='event'){ refreshStats(); if(e.kind==='email') loadEmails(); }
+    if(e.kind==='draft'){ loadDrafts(); refreshStats(); }
+    if(e.kind==='email'||e.kind==='qualify'||e.kind==='event'){ refreshStats(); if(e.kind==='email'){loadEmails();loadDrafts();} }
   }catch{} };
 }
 
@@ -293,16 +318,23 @@ async function refreshStats(){
   // compteurs des nœuds du schéma
   for(const [k,N] of Object.entries(NODES)){
     let v=0;
-    if(N.status) v+=c[N.status]||0;
-    if(N.statusExtra) v+=c[N.statusExtra]||0;
-    if(N.statusToday) v+=t[N.statusToday]||0;
+    if(N.countKey) v=s[N.countKey]||0;
+    else { if(N.status) v+=c[N.status]||0; if(N.statusExtra) v+=c[N.statusExtra]||0; if(N.statusToday) v+=t[N.statusToday]||0; }
     const el=document.getElementById('c-'+k); if(el) el.textContent=v;
   }
   const m=s.mailer||{};
   $('#mailer').textContent=(m.ok?'✅ ':'⚠️ ')+(m.mode||''); $('#mailer').className='pill '+(m.ok?'ok':'warn');
-  $('#modePill').textContent=s.dryRun?'🧪 DRY_RUN (simulation)':(s.paused?'⏸️ En pause':'▶️ Actif');
-  $('#modePill').className='pill '+(s.dryRun||s.paused?'warn':'ok');
-  $('#pauseBtn').textContent=s.paused?'▶️ Reprendre':'⏸️ Pause envois'; window._paused=s.paused;
+  $('#modePill').textContent=s.dryRun?'🧪 DRY_RUN (simulation)':(s.scraping?'🕷️ Scraping en cours':'⏸️ Scraping arrêté');
+  $('#modePill').className='pill '+(s.dryRun?'warn':(s.scraping?'ok':''));
+  // bouton scraping
+  const sb=$('#scrapeBtn'); window._scraping=s.scraping;
+  sb.textContent=s.scraping?'⏹️ Arrêter le scraping':'▶️ Démarrer le scraping';
+  sb.className='primary'+(s.scraping?' on':'');
+  // boutons "tout envoyer"
+  const n=s.draftsReady||0;
+  $('#sendAllBtn').textContent=`📤 Tout envoyer (${n})`;
+  $('#sendAllBtn').disabled = n===0;
+  const sa2=$('#sendAll2'); if(sa2) sa2.disabled=n===0;
 }
 
 async function loadEmails(){
@@ -326,12 +358,46 @@ async function loadLeads(){
     <td>${['CONTACTED','FOLLOWUP_1','EXHAUSTED'].includes(l.status)?
       `<button class="mini" onclick="mark(${l.id},'replied')">✅ Réponse</button> <button class="mini" onclick="mark(${l.id},'optout')">🚫 STOP</button>`:''}</td></tr>`).join('');
 }
-async function mark(id,action){await fetch('/api/mark',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action})});loadLeads();refreshStats();}
-async function scrape(){await fetch('/api/scrape',{method:'POST'});}
-async function togglePause(){await fetch('/api/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paused:!window._paused})});refreshStats();}
+async function mark(id,action){await fetch('/api/mark',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action})});loadLeads();loadDrafts();refreshStats();}
 
-buildFlow(); connect(); refreshStats(); loadEmails(); loadLeads();
-setInterval(refreshStats,6000); setInterval(loadLeads,15000);
+/* ---------- Brouillons prêts à envoyer ---------- */
+async function loadDrafts(){
+  const rows=await fetch('/api/drafts').then(r=>r.json());
+  $('#draftCnt').textContent=rows.length;
+  $('#drafts').innerHTML=rows.map(d=>{
+    const kind=d.draft_touch===0?'cold':'relance '+d.draft_touch;
+    return `<div class="dr" id="dr-${d.id}">
+      <div class="info" onclick="this.parentNode.classList.toggle('open')">
+        <div><span class="k ${d.draft_touch?'relance':''}">${kind}</span><span class="subj">${esc(d.draft_subject)}</span></div>
+        <div class="to">${esc(d.name)} &lt;${esc(d.email)}&gt; · ${esc(d.sector_label||'')} · ${esc(d.city||'')} ${d.score?'· score '+d.score:''}</div>
+        <div class="body">${esc(d.draft_body)}</div>
+      </div>
+      <div class="act">
+        <button class="send mini" onclick="sendOne(${d.id})">📤 Envoyer</button>
+        <button class="mini" onclick="mark(${d.id},'optout')">🚫</button>
+      </div>
+    </div>`;
+  }).join('') || '<div class="dr muted" style="padding:16px">Aucun email en attente. Démarre le scraping — les emails prêts apparaîtront ici.</div>';
+}
+async function sendOne(id){
+  const btn=event?.target; if(btn){btn.disabled=true;btn.textContent='⏳';}
+  const r=await fetch('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json());
+  loadDrafts(); loadEmails(); loadLeads(); refreshStats();
+  if(!r.ok && btn){btn.disabled=false;btn.textContent='❌ '+(r.error||'échec');}
+}
+async function sendAll(){
+  if(!confirm('Envoyer TOUS les emails prêts ?')) return;
+  await fetch('/api/send-all',{method:'POST'});
+  loadDrafts(); loadEmails(); loadLeads(); refreshStats();
+}
+async function toggleScrape(){
+  const to=window._scraping?'stop':'start';
+  await fetch('/api/scrape/'+to,{method:'POST'});
+  refreshStats();
+}
+
+buildFlow(); connect(); refreshStats(); loadDrafts(); loadEmails(); loadLeads();
+setInterval(refreshStats,5000); setInterval(loadDrafts,8000); setInterval(loadLeads,15000);
 </script>
 </body>
 </html>

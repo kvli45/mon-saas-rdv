@@ -71,6 +71,20 @@ CREATE TABLE IF NOT EXISTS kv (
 );
 `);
 
+// Migration : colonnes brouillon (email préparé, en attente d'envoi manuel)
+const cols = db.prepare(`PRAGMA table_info(leads)`).all().map((c) => c.name);
+for (const [name, def] of [
+  ['draft_subject', 'TEXT'],
+  ['draft_body', 'TEXT'],
+  ['draft_touch', 'INTEGER'],
+]) {
+  if (!cols.includes(name)) db.exec(`ALTER TABLE leads ADD COLUMN ${name} ${def}`);
+}
+
+export function draftsReadyCount() {
+  return db.prepare(`SELECT COUNT(*) n FROM leads WHERE draft_body IS NOT NULL`).get().n;
+}
+
 export function saveEmail(e) {
   db.prepare(
     `INSERT INTO emails (lead_id, kind, to_email, to_name, sector, city, score, subject, body)
