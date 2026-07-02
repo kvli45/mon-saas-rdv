@@ -87,6 +87,16 @@ export function startServer(hooks = {}) {
       ).all());
     }
 
+    // Export CSV de tous les leads (email + téléphone + statut) — pour Excel / phoning
+    if (p === '/api/export.csv') {
+      const rows = db.prepare(`SELECT name,sector_label,city,address,phone,email,website,score,status,contacted_at FROM leads ORDER BY status,score DESC`).all();
+      const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const header = ['Entreprise', 'Secteur', 'Ville', 'Adresse', 'Téléphone', 'Email', 'Site', 'Score', 'Statut', 'Contacté le'];
+      const csv = '﻿' + [header.join(';'), ...rows.map((r) => [r.name, r.sector_label, r.city, r.address, r.phone, r.email, r.website, r.score, r.status, r.contacted_at].map(esc).join(';'))].join('\n');
+      res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="leads-cleantech.csv"' });
+      return res.end(csv);
+    }
+
     if (p === '/api/emails') {
       return json(res, db.prepare(
         `SELECT id,lead_id,kind,to_email,to_name,sector,city,score,subject,body,created_at FROM emails ORDER BY id DESC LIMIT 200`
