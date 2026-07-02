@@ -47,6 +47,11 @@ export const config = {
     chromePath: process.env.PW_CHROME_PATH || null, // sinon Playwright trouve seul
     headless: process.env.PW_HEADFUL !== '1',
     concurrency: int(process.env.SCRAPE_CONCURRENCY, 3),
+    resolveWebsites: process.env.RESOLVE_WEBSITES !== '0', // trouve le site des leads qui n'en ont pas
+    guessEmail: process.env.GUESS_EMAIL !== '0',           // devine contact@domaine + vérif MX en dernier recours
+  },
+  sources: {
+    registry: process.env.USE_REGISTRY !== '0', // annuaire officiel des entreprises (volume)
   },
   company: {
     name: process.env.COMPANY_NAME || 'CleanTech',

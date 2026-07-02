@@ -1,5 +1,6 @@
 import { db, setStatus, logEvent, isSuppressed } from '../db.js';
-import { scrapeSite, hunterLookup } from '../scraper.js';
+import { config } from '../config.js';
+import { scrapeSite, hunterLookup, searchWebsite } from '../scraper.js';
 import { log } from '../log.js';
 
 /** Enrichit un lot de leads NEW : scrape le site (JS + anti-bot), extrait email + texte. */
@@ -12,14 +13,24 @@ export async function enrichBatch(limit = 8) {
     try {
       let email = null, excerpt = null, phone = null;
 
-      if (lead.website) {
-        const r = await scrapeSite(lead.website, lead.name);
+      // Pas de site web ? On le cherche (nom + ville) pour rendre le lead exploitable.
+      let website = lead.website;
+      if (!website && config.scraper.resolveWebsites) {
+        website = await searchWebsite(lead.name, lead.city);
+        if (website) {
+          db.prepare(`UPDATE leads SET website = ? WHERE id = ?`).run(website, lead.id);
+          logEvent(lead.id, 'ENRICHED', `site web trouvé : ${website}`);
+        }
+      }
+
+      if (website) {
+        const r = await scrapeSite(website, lead.name);
         email = r.email;
         excerpt = r.excerpt;
         phone = r.phone;
         if (!email) {
           try {
-            const domain = new URL(lead.website.startsWith('http') ? lead.website : 'https://' + lead.website).hostname.replace(/^www\./, '');
+            const domain = new URL(website).hostname.replace(/^www\./, '');
             email = await hunterLookup(domain);
           } catch { /* url invalide */ }
         }

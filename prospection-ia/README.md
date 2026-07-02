@@ -45,10 +45,17 @@ cd prospection-ia
 npm install
 npx playwright install chromium     # navigateur pour le scraping
 cp .env.example .env                 # puis remplis (voir ci-dessous)
+npm run doctor                       # 🩺 vérifie que tout est OK AVANT de lancer
 npm start                            # lance la boucle + le dashboard
 ```
 
 Ouvre **http://localhost:4300**.
+
+### 🩺 En cas de souci (« 0 résultat », rien ne s'envoie…) : `npm run doctor`
+
+Le diagnostic teste **chaque brique** et te dit précisément ce qui bloque :
+navigateur Playwright, sources de sourcing (Overpass, annuaire entreprises), résolution MX,
+validité de la clé API Anthropic, envoi Gmail. **Lance-le en premier** si quelque chose cloche.
 
 ### Configuration `.env`
 

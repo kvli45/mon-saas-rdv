@@ -40,15 +40,18 @@
   .flowhead{display:flex;align-items:center;gap:10px;padding:10px 10px 4px}
   .flowhead b{font-size:15px}.flowhead .leg{margin-left:auto;display:flex;gap:14px;font-size:11px;color:var(--mut)}
   .leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-  svg.flow{width:100%;height:auto;display:block}
-  .node rect{transition:filter .25s, stroke .25s}
-  .node .big{font-weight:800;font-size:22px}
-  .node .lab{font-size:12.5px;font-weight:700}
-  .node .sub{font-size:10px;fill:var(--mut)}
-  .node.flash rect{filter:drop-shadow(0 0 10px currentColor) brightness(1.25)}
-  .edge{stroke:#28374d;stroke-width:2;fill:none}
-  .elabel{font-size:10px;fill:#63758f}
-  .scorepop{font-size:16px;font-weight:800;opacity:0}
+  svg.flow{width:100%;height:auto;display:block;max-height:340px}
+  .node rect{transition:filter .3s, stroke-opacity .3s}
+  .node .big{font-weight:800;font-size:17px}
+  .node .lab{font-size:10.5px;font-weight:700}
+  .node .sub{font-size:8px;fill:var(--mut)}
+  .node.flash rect{filter:drop-shadow(0 0 9px currentColor) brightness(1.3)}
+  /* lignes : base discrète + flux animé (marching ants) qui coule en continu */
+  .edge{fill:none;stroke:#22304a;stroke-width:1.6;opacity:.55}
+  .edge-flow{fill:none;stroke-width:2.2;stroke-linecap:round;stroke-dasharray:2 13;opacity:.7;
+    animation:flow 1.1s linear infinite}
+  @keyframes flow{to{stroke-dashoffset:-30}}
+  .scorepop{font-size:14px;font-weight:800;opacity:0}
 
   .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:4px 0 16px}
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px}
@@ -122,7 +125,7 @@
         <span><i style="background:#ec4899"></i>réponse 🎉</span>
       </div>
     </div>
-    <svg class="flow" id="flow" viewBox="0 0 1120 470" preserveAspectRatio="xMidYMid meet"></svg>
+    <svg class="flow" id="flow" viewBox="0 0 890 316" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
 
   <div class="kpis" id="kpis"></div>
@@ -173,23 +176,23 @@ const $ = (s)=>document.querySelector(s);
 const esc = (s)=>(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const scCls = (n)=>n>=75?'sc-hi':n>=55?'sc-mid':'sc-lo';
 
-/* ---------- Définition du schéma ---------- */
-const NW=158, NH=66;
+/* ---------- Schéma compact & moderne (courbes animées) ---------- */
+const NW=132, NH=50;
 const NODES = {
-  SOURCE:  {x:20,  y:40,  lab:'Sourcing',   sub:'recherche web / Places', ic:'🔎', col:'#22c55e', status:'NEW'},
-  ENRICH:  {x:238, y:40,  lab:'Scraping',   sub:'navigateur furtif',      ic:'🕷️', col:'#14b8a6', status:'ENRICHED'},
-  QUALIFY: {x:456, y:40,  lab:'Qualif. IA', sub:'Claude · score 0-100',   ic:'🧠', col:'#3b82f6', status:'QUALIFIED'},
-  COMPOSE: {x:674, y:40,  lab:'Prêt à envoyer', sub:'Claude a rédigé',      ic:'✍️', col:'#a78bfa', countKey:'draftsReady'},
-  SEND:    {x:892, y:40,  lab:'Envoi',      sub:'Gmail SMTP',             ic:'📧', col:'#8b5cf6', status:'CONTACTED'},
-  NOEMAIL: {x:238, y:210, lab:'Sans email', sub:'à appeler',              ic:'📵', col:'#8091a8', status:'NO_EMAIL'},
-  REJECT:  {x:456, y:210, lab:'Rejeté',     sub:'hors cible',             ic:'⛔', col:'#ef4444', status:'REJECTED'},
-  FOLLOW:  {x:892, y:210, lab:'Relances',   sub:'J+3 · J+7',              ic:'🔁', col:'#f59e0b', status:'FOLLOWUP_1', statusExtra:'EXHAUSTED'},
-  SUPPRESS:{x:674, y:210, lab:'Exclu',      sub:'opt-out / bounce',       ic:'🚫', col:'#6b7280', status:'OPTOUT', statusExtra:'BOUNCED'},
-  REPLIED: {x:892, y:360, lab:'Réponse',    sub:'à conclure',             ic:'🎉', col:'#ec4899', status:'REPLIED'},
+  SOURCE:  {x:14,  y:26,  lab:'Sourcing',   sub:'OSM · Sirene · web',  ic:'🔎', col:'#22c55e', status:'NEW'},
+  ENRICH:  {x:196, y:26,  lab:'Scraping',   sub:'furtif · MX · CF',    ic:'🕷️', col:'#14b8a6', status:'ENRICHED'},
+  QUALIFY: {x:378, y:26,  lab:'Qualif. IA', sub:'Claude · 0-100',      ic:'🧠', col:'#3b82f6', status:'QUALIFIED'},
+  COMPOSE: {x:560, y:26,  lab:'Prêt',       sub:'email rédigé',        ic:'✍️', col:'#a78bfa', countKey:'draftsReady'},
+  SEND:    {x:742, y:26,  lab:'Envoi',      sub:'Gmail',               ic:'📧', col:'#8b5cf6', status:'CONTACTED'},
+  NOEMAIL: {x:196, y:150, lab:'Sans email', sub:'à appeler',           ic:'📵', col:'#8091a8', status:'NO_EMAIL'},
+  REJECT:  {x:378, y:150, lab:'Rejeté',     sub:'hors cible',          ic:'⛔', col:'#ef4444', status:'REJECTED'},
+  SUPPRESS:{x:560, y:150, lab:'Exclu',      sub:'opt-out',             ic:'🚫', col:'#6b7280', status:'OPTOUT', statusExtra:'BOUNCED'},
+  FOLLOW:  {x:742, y:150, lab:'Relances',   sub:'J+3 · J+7',           ic:'🔁', col:'#f59e0b', status:'FOLLOWUP_1', statusExtra:'EXHAUSTED'},
+  REPLIED: {x:742, y:250, lab:'Réponse',    sub:'à conclure',          ic:'🎉', col:'#ec4899', status:'REPLIED'},
 };
 const EDGES = [
-  ['e1','SOURCE','ENRICH','R','L','#3b82f6'],
-  ['e2','ENRICH','QUALIFY','R','L','#3b82f6'],
+  ['e1','SOURCE','ENRICH','R','L','#22c55e'],
+  ['e2','ENRICH','QUALIFY','R','L','#14b8a6'],
   ['e3','QUALIFY','COMPOSE','R','L','#22c55e'],
   ['e4','COMPOSE','SEND','R','L','#a78bfa'],
   ['e5','ENRICH','NOEMAIL','B','T','#6b7280'],
@@ -201,34 +204,40 @@ const EDGES = [
 function anchor(n,side){const N=NODES[n];switch(side){
   case 'R':return [N.x+NW,N.y+NH/2];case 'L':return [N.x,N.y+NH/2];
   case 'B':return [N.x+NW/2,N.y+NH];case 'T':return [N.x+NW/2,N.y];}}
+// Courbes façon ruban : S-curve horizontale, arc "spirale" pour les branches
 function pathD(a,b){
-  const [x1,y1]=a,[x2,y2]=b;
-  if(Math.abs(y1-y2)<2) return `M${x1},${y1} L${x2},${y2}`;        // horizontal
-  if(Math.abs(x1-x2)<2) return `M${x1},${y1} L${x2},${y2}`;        // vertical
-  const my=(y1+y2)/2;                                              // elbow courbe
-  return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;
+  const [x1,y1]=a,[x2,y2]=b, dx=x2-x1, dy=y2-y1;
+  if(Math.abs(dy)<2){ // horizontal -> vague douce
+    return `M${x1},${y1} C${x1+dx*0.42},${y1-15} ${x2-dx*0.42},${y2+15} ${x2},${y2}`;
+  }
+  if(Math.abs(dx)<2){ // vertical -> arc bombé (effet spirale)
+    return `M${x1},${y1} C${x1+30},${y1+dy*0.34} ${x2-30},${y2-dy*0.34} ${x2},${y2}`;
+  }
+  return `M${x1},${y1} C${x1+dx*0.5},${y1} ${x2-dx*0.5},${y2} ${x2},${y2}`;
 }
 
 function buildFlow(){
   const svg=$('#flow');
-  const NS='http://www.w3.org/2000/svg';
+  let defs=`<defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <linearGradient id="ng" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#141d2c"/><stop offset="1" stop-color="#0d1420"/></linearGradient>
+  </defs>`;
   let edgesG='', nodesG='';
-  // arrow marker
-  edgesG += `<defs><marker id="arw" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6" fill="#3a4a63"/></marker></defs>`;
   for(const [id,from,to,fs,ts,col] of EDGES){
     const d=pathD(anchor(from,fs),anchor(to,ts));
-    edgesG += `<path id="${id}" class="edge" d="${d}" marker-end="url(#arw)"/>`;
+    edgesG += `<path id="${id}" class="edge" d="${d}"/><path class="edge-flow" d="${d}" style="stroke:${col};animation-delay:${(Math.random()*-1).toFixed(2)}s"/>`;
   }
   for(const [k,N] of Object.entries(NODES)){
     nodesG += `<g class="node" id="n-${k}" style="color:${N.col}">
-      <rect x="${N.x}" y="${N.y}" width="${NW}" height="${NH}" rx="12" fill="#0f1826" stroke="${N.col}" stroke-opacity=".55" stroke-width="1.5"/>
-      <text x="${N.x+14}" y="${N.y+26}" class="lab" fill="#e6ecf5">${N.ic} ${N.lab}</text>
-      <text x="${N.x+14}" y="${N.y+44}" class="sub">${N.sub}</text>
-      <text x="${N.x+NW-14}" y="${N.y+45}" text-anchor="end" class="big" id="c-${k}" fill="${N.col}">0</text>
-      <text x="${N.x+NW/2}" y="${N.y-8}" text-anchor="middle" class="scorepop" id="pop-${k}" fill="${N.col}"></text>
+      <rect x="${N.x}" y="${N.y}" width="${NW}" height="${NH}" rx="13" fill="url(#ng)" stroke="${N.col}" stroke-opacity=".6" stroke-width="1.4"/>
+      <circle cx="${N.x+15}" cy="${N.y+NH/2}" r="3" fill="${N.col}" filter="url(#glow)"/>
+      <text x="${N.x+26}" y="${N.y+21}" class="lab" fill="#e9eff7">${N.ic} ${N.lab}</text>
+      <text x="${N.x+26}" y="${N.y+36}" class="sub">${N.sub}</text>
+      <text x="${N.x+NW-12}" y="${N.y+NH/2+6}" text-anchor="end" class="big" id="c-${k}" fill="${N.col}">0</text>
+      <text x="${N.x+NW/2}" y="${N.y-7}" text-anchor="middle" class="scorepop" id="pop-${k}" fill="${N.col}"></text>
     </g>`;
   }
-  svg.innerHTML = edgesG + nodesG;
+  svg.innerHTML = defs + edgesG + nodesG;
 }
 
 /* ---------- Animation d'une particule le long d'une flèche ---------- */
@@ -236,10 +245,10 @@ function firePacket(edgeId,color){
   const path=document.getElementById(edgeId); if(!path) return;
   const len=path.getTotalLength();
   const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
-  c.setAttribute('r','5'); c.setAttribute('fill',color);
-  c.setAttribute('filter','drop-shadow(0 0 6px '+color+')');
+  c.setAttribute('r','3.6'); c.setAttribute('fill',color);
+  c.setAttribute('filter','drop-shadow(0 0 5px '+color+')');
   $('#flow').appendChild(c);
-  const dur=950; const t0=performance.now();
+  const dur=1050; const t0=performance.now();
   (function step(now){
     const t=Math.min(1,(now-t0)/dur);
     const p=path.getPointAtLength(t*len);

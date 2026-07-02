@@ -1,6 +1,7 @@
 import { db, kvGet, kvSet, logEvent } from '../db.js';
 import { config, SECTORS, CITIES } from '../config.js';
-import { initBrowser } from '../scraper.js';
+import { cityCoords } from '../geo.js';
+import { initBrowser, searchWebsite } from '../scraper.js';
 import { chromium } from 'playwright';
 import { log } from '../log.js';
 
@@ -20,10 +21,9 @@ const insertLead = db.prepare(`
 `);
 
 function addLead(row, sourceTag) {
-  // statut initial : NEW si site (à scraper), ENRICHED si email déjà connu, sinon NEW
   const status = row.email ? 'ENRICHED' : 'NEW';
   const r = insertLead.run({
-    place_id: row.place_id, name: row.name || 'Inconnu', sector: row.sector, sector_label: row.sector_label,
+    place_id: row.place_id, name: (row.name || 'Inconnu').slice(0, 140), sector: row.sector, sector_label: row.sector_label,
     city: row.city, address: row.address || null, phone: row.phone || null, website: row.website || null,
     email: row.email || null, rating: row.rating ?? null, reviews: row.reviews ?? null, status,
   });
@@ -31,79 +31,99 @@ function addLead(row, sourceTag) {
   return false;
 }
 
-/* ============ 1) OpenStreetMap / Overpass (puissant, gratuit, sans clé) ============ */
-// Filtres OSM par secteur
+/* ============ 1) OpenStreetMap / Overpass (autour de coordonnées = fiable) ============ */
 const OSM = {
   detailing:      ['nwr["amenity"="car_wash"]', 'nwr["shop"="car_repair"]'],
   lavage:         ['nwr["amenity"="car_wash"]'],
-  nettoyage_auto: ['nwr["amenity"="car_wash"]'],
+  nettoyage_auto: ['nwr["amenity"="car_wash"]', 'nwr["shop"="car_repair"]'],
   garage:         ['nwr["shop"="car_repair"]'],
   carrosserie:    ['nwr["shop"="car_repair"]', 'nwr["shop"="car_body_repair"]'],
   concession:     ['nwr["shop"="car"]'],
   location:       ['nwr["amenity"="car_rental"]'],
-  vtc:            [], // peu présent dans OSM → passe au fallback
+  vtc:            [],
 };
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+
+async function overpassQuery(body) {
+  for (const url of OVERPASS) {
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(body), signal: AbortSignal.timeout(30000) });
+      if (res.ok) return await res.json();
+    } catch { /* miroir suivant */ }
+  }
+  return null;
+}
 
 async function sourceOverpass(sector, city) {
   const filters = OSM[sector.key];
-  if (!filters || !filters.length) return 0;
-  const body = `[out:json][timeout:25];
-area["name"="${city}"]["boundary"="administrative"]->.a;
-(${filters.map((f) => `${f}(area.a);`).join('')});
-out center tags 80;`;
-
-  let data = null;
-  for (const url of OVERPASS) {
-    try {
-      const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(body), signal: AbortSignal.timeout(30000) });
-      if (res.ok) { data = await res.json(); break; }
-    } catch { /* essaie le miroir suivant */ }
-  }
+  if (!filters?.length) return 0;
+  const coords = cityCoords(city);
+  // 1er choix : autour des coordonnées (fiable). Fallback : zone par nom.
+  const region = coords
+    ? filters.map((f) => `${f}(around:11000,${coords[0]},${coords[1]});`).join('')
+    : `area["name"="${city}"]["boundary"="administrative"]->.a;` + filters.map((f) => `${f}(area.a);`).join('');
+  const body = `[out:json][timeout:25];(${region});out center tags 120;`;
+  const data = await overpassQuery(body);
   if (!data?.elements) return 0;
 
   let added = 0;
   for (const el of data.elements) {
     const t = el.tags || {};
     if (!t.name) continue;
-    const website = t.website || t['contact:website'] || t.url || null;
+    let website = t.website || t['contact:website'] || t.url || null;
+    if (website && !/^https?:\/\//i.test(website)) website = 'https://' + website;
     const phone = t.phone || t['contact:phone'] || t['contact:mobile'] || null;
     const email = t.email || t['contact:email'] || null;
     const address = [t['addr:housenumber'], t['addr:street'], t['addr:postcode'], t['addr:city']].filter(Boolean).join(' ') || null;
-    if (!website && !email && !phone) continue; // sans aucun canal = inexploitable
-    if (addLead({
-      place_id: `osm:${el.type}/${el.id}`, name: t.name, sector: sector.key, sector_label: sector.label,
-      city, address, phone, website: website ? (website.startsWith('http') ? website : 'https://' + website) : null, email,
-    }, `OSM · ${sector.key} @ ${city}`)) added++;
+    if (!website && !email && !phone && !address) continue;
+    if (addLead({ place_id: `osm:${el.type}/${el.id}`, name: t.name, sector: sector.key, sector_label: sector.label, city, address, phone, website, email }, `OSM · ${sector.key} @ ${city}`)) added++;
   }
   return added;
 }
 
-/* ============ 2) Google Places (premium, si clé) ============ */
+/* ============ 2) Annuaire officiel des entreprises (recherche-entreprises.api.gouv.fr) ============ */
+// Gratuit, sans clé. Donne nom + adresse (pas d'email) → la résolution de site prend le relais.
+const NAF = {
+  garage: '45.20A,45.20B', carrosserie: '45.20A,45.20B', detailing: '45.20A,45.20B',
+  lavage: '45.20A', nettoyage_auto: '45.20A', concession: '45.11Z', location: '77.11A,77.11B', vtc: '49.32Z',
+};
+async function sourceRegistry(sector, city) {
+  if (!config.sources.registry) return 0;
+  const naf = NAF[sector.key];
+  let added = 0;
+  for (let page = 1; page <= 2; page++) {
+    const url = `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(city)}${naf ? `&activite_principale=${encodeURIComponent(naf)}` : ''}&page=${page}&per_page=25&etat_administratif=A`;
+    let data = null;
+    try { const res = await fetch(url, { signal: AbortSignal.timeout(15000) }); if (res.ok) data = await res.json(); } catch { break; }
+    const results = data?.results || [];
+    if (!results.length) break;
+    for (const r of results) {
+      const s = r.siege || {};
+      if (s.libelle_commune && city && !new RegExp(city.slice(0, 5), 'i').test(s.libelle_commune)) continue; // garde la bonne ville
+      const address = [s.adresse || [s.numero_voie, s.type_voie, s.libelle_voie].filter(Boolean).join(' '), s.code_postal, s.libelle_commune].filter(Boolean).join(', ') || null;
+      if (addLead({ place_id: `sirene:${r.siren || r.siret || r.nom_complet}`, name: r.nom_complet || r.nom_raison_sociale, sector: sector.key, sector_label: sector.label, city, address }, `Sirene · ${sector.key} @ ${city}`)) added++;
+    }
+  }
+  return added;
+}
+
+/* ============ 3) Google Places (premium, si clé) ============ */
 async function sourcePlaces(sector, city) {
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json', 'X-Goog-Api-Key': config.placesKey,
-      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.businessStatus',
-    },
+    headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': config.placesKey, 'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.businessStatus' },
     body: JSON.stringify({ textQuery: `${sector.query} ${city}`, languageCode: 'fr', maxResultCount: 20 }),
   });
   if (!res.ok) throw new Error(`Places ${res.status}`);
-  const places = (await res.json()).places || [];
   let added = 0;
-  for (const p of places) {
+  for (const p of (await res.json()).places || []) {
     if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') continue;
-    if (addLead({
-      place_id: p.id, name: p.displayName?.text, sector: sector.key, sector_label: sector.label, city,
-      address: p.formattedAddress, phone: p.nationalPhoneNumber, website: p.websiteUri,
-      rating: p.rating, reviews: p.userRatingCount,
-    }, `Places · ${sector.key} @ ${city}`)) added++;
+    if (addLead({ place_id: p.id, name: p.displayName?.text, sector: sector.key, sector_label: sector.label, city, address: p.formattedAddress, phone: p.nationalPhoneNumber, website: p.websiteUri, rating: p.rating, reviews: p.userRatingCount }, `Places · ${sector.key} @ ${city}`)) added++;
   }
   return added;
 }
 
-/* ============ 3) Recherche web (fallback, Playwright/DuckDuckGo, paginé) ============ */
+/* ============ 4) Recherche web (fallback, paginé) ============ */
 async function sourceSearch(sector, city) {
   await initBrowser();
   const opts = { headless: config.scraper.headless, args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'] };
@@ -112,7 +132,7 @@ async function sourceSearch(sector, city) {
   const page = await b.newPage({ locale: 'fr-FR' });
   const seen = new Set();
   let added = 0;
-  const BLOCK = /google\.|facebook\.|instagram|linkedin|pagesjaunes|yelp|tripadvisor|leboncoin|mappy|societe\.com|wikipedia|youtube|duckduckgo|openstreetmap/i;
+  const BLOCK = /google\.|facebook\.|instagram|linkedin|pagesjaunes|yelp|tripadvisor|leboncoin|mappy|societe\.com|wikipedia|youtube|duckduckgo|openstreetmap|infogreffe|verif\.com/i;
   try {
     for (const q of [`${sector.query} ${city}`, `${sector.query} ${city} contact`]) {
       await page.goto(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -124,35 +144,24 @@ async function sourceSearch(sector, city) {
         seen.add(host);
         if (addLead({ place_id: `web:${host}`, name: r.title.slice(0, 120) || host, sector: sector.key, sector_label: sector.label, city, website: `https://${host}` }, `Web · ${sector.key} @ ${city}`)) added++;
       }
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(700);
     }
-  } finally {
-    await page.close().catch(() => {});
-    await b.close().catch(() => {});
-  }
+  } finally { await page.close().catch(() => {}); await b.close().catch(() => {}); }
   return added;
 }
 
-/* ============ Orchestration : combine les sources pour un max de résultats ============ */
+/* ============ Orchestration ============ */
 export async function sourceNextTarget() {
   const { sector, city, idx, total } = nextTarget();
   log(`Sourcing : ${sector.label} à ${city} (${idx + 1}/${total})`);
   let added = 0;
   const parts = [];
+  const run = async (label, fn) => { try { const n = await fn(); added += n; parts.push(`${label}:${n}`); } catch (e) { parts.push(`${label}:err`); log(`  ${label} : ${e.message}`); } };
 
-  // Source premium si clé, sinon OSM en primaire
-  try {
-    if (config.placesKey) { const n = await sourcePlaces(sector, city); added += n; parts.push(`Places:${n}`); }
-  } catch (e) { log(`  Places indispo : ${e.message}`); }
-
-  try { const n = await sourceOverpass(sector, city); added += n; parts.push(`OSM:${n}`); }
-  catch (e) { log(`  OSM indispo : ${e.message}`); }
-
-  // Fallback recherche web si les sources structurées n'ont rien donné (ou secteur non couvert)
-  if (added === 0) {
-    try { const n = await sourceSearch(sector, city); added += n; parts.push(`Web:${n}`); }
-    catch (e) { log(`  Web indispo : ${e.message}`); }
-  }
+  if (config.placesKey) await run('Places', () => sourcePlaces(sector, city));
+  await run('OSM', () => sourceOverpass(sector, city));
+  await run('Sirene', () => sourceRegistry(sector, city));
+  if (added === 0) await run('Web', () => sourceSearch(sector, city));
 
   log(`Sourcing terminé : ${added} nouveaux leads (${parts.join(' · ')})`);
   return added;

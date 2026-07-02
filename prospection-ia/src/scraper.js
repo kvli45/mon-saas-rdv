@@ -278,6 +278,11 @@ export async function scrapeSite(website, name = '') {
     if (!best) best = c; // garde le meilleur même sans MX confirmé
   }
 
+  // Dernier recours : deviner contact@domaine si le domaine reçoit bien des emails (MX)
+  if (!best && config.scraper.guessEmail && domain && await domainAcceptsMail(domain)) {
+    best = { email: `contact@${domain}`, score: 55, mx: true, guessed: true };
+  }
+
   const phone = allData.map(extractPhone).find(Boolean) || null;
   const socials = [...new Set(allData.flatMap((d) => d.socials || []))].slice(0, 3);
 
@@ -286,6 +291,30 @@ export async function scrapeSite(website, name = '') {
     ok: !!best,
   });
   return { email: best?.email || null, emailScore: best?.score ?? null, emailMx: !!best?.mx, excerpt, phone, socials, tried };
+}
+
+/* ---------------- Résolution de site web (nom + ville -> URL) ---------------- */
+const DIR_BLOCK = /google\.|facebook|instagram|linkedin|pagesjaunes|yelp|tripadvisor|leboncoin|mappy|societe\.com|wikipedia|youtube|duckduckgo|openstreetmap|infogreffe|verif\.com|indeed|glassdoor|\.gouv\.fr/i;
+export async function searchWebsite(name, city = '') {
+  if (!name) return null;
+  await initBrowser();
+  const page = await ctx.newPage();
+  try {
+    const q = encodeURIComponent(`${name} ${city}`.trim());
+    await page.goto(`https://html.duckduckgo.com/html/?q=${q}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.waitForTimeout(700);
+    const hrefs = await page.$$eval('a.result__a', (els) => els.map((e) => e.href)).catch(() => []);
+    for (const href of hrefs.slice(0, 8)) {
+      let host; try { host = new URL(href).hostname.replace(/^www\./, ''); } catch { continue; }
+      if (DIR_BLOCK.test(host)) continue;
+      return 'https://' + host; // 1er domaine "site officiel" plausible
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
 /* ---------------- Fallback Hunter.io ---------------- */
