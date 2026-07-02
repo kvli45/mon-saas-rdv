@@ -13,7 +13,10 @@ Pipeline qui tourne **en local sur ton PC** pour vendre les produits CleanTech a
   Places)          emails obfusqués)  filtre la qualité   par secteur+hooks
 ```
 
-1. **Scraping / Sourcing** — trouve les entreprises par recherche web (gratuit, aucun compte) ou via Google Places si tu fournis une clé.
+1. **Sourcing puissant (multi-sources)** — combine plusieurs bases pour un max de prospects :
+   - **OpenStreetMap / Overpass API** (gratuit, sans clé) : base mondiale de commerces géolocalisés (garages, lavages, concessions, loueurs…) avec **site web + téléphone (+ parfois email) directement dans la donnée** — des dizaines à centaines par ville. Quand l'email est déjà fourni, le lead passe direct en `ENRICHED` (scraping économisé).
+   - **Google Places** (premium) si tu fournis une clé — meilleure note/avis.
+   - **Recherche web** (Playwright/DuckDuckGo, paginé) en fallback pour les secteurs peu couverts (ex. VTC).
 2. **Enrichissement (scraper niveau pro)** — un **navigateur furtif Playwright** visite chaque site en profondeur et extrait les emails de **toutes** les sources :
    - **Décodage Cloudflare** (`data-cfemail`) : les emails cachés derrière la protection Cloudflare
    - **Données structurées JSON-LD / schema.org** (`LocalBusiness.email`, `contactPoint`)
