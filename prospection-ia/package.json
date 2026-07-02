@@ -1,0 +1,20 @@
+{
+  "name": "cleantech-prospector",
+  "version": "1.0.0",
+  "description": "Pipeline de prospection B2B autonome pour CleanTech — sourcing, qualification IA, cold emails personnalisés, relances",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "once": "node src/index.js --once",
+    "report": "node src/report.js",
+    "import": "node scripts/import-csv.js",
+    "mark": "node scripts/mark.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

@@ -1,0 +1,5 @@
+.env
+node_modules/
+prospector.db
+prospector.db-journal
+*.log
