@@ -14,7 +14,14 @@ Pipeline qui tourne **en local sur ton PC** pour vendre les produits CleanTech a
 ```
 
 1. **Scraping / Sourcing** — trouve les entreprises par recherche web (gratuit, aucun compte) ou via Google Places si tu fournis une clé.
-2. **Enrichissement** — un **navigateur furtif Playwright** (masque les signaux d'automatisation, rend le JS, scrolle) visite chaque site : accueil, /contact, /mentions-légales. Il extrait les emails même **obfusqués** (`nom [at] domaine [dot] fr`, entités HTML, `mailto:`) et les **score par qualité** (email du même domaine + `contact@`/`direction@` = ultra qualifié ; `noreply`/`rgpd` écartés).
+2. **Enrichissement (scraper niveau pro)** — un **navigateur furtif Playwright** visite chaque site en profondeur et extrait les emails de **toutes** les sources :
+   - **Décodage Cloudflare** (`data-cfemail`) : les emails cachés derrière la protection Cloudflare
+   - **Données structurées JSON-LD / schema.org** (`LocalBusiness.email`, `contactPoint`)
+   - **Obfuscation** (`nom [at] domaine [dot] fr`, entités HTML, `mailto:`)
+   - **Crawl intelligent** : découverte des vrais liens internes (contact, mentions, équipe) + lecture du `sitemap.xml`, rendu **concurrent** de plusieurs pages
+   - **Vérification MX (DNS)** : ne garde que les domaines qui **reçoivent réellement des emails** → emails ultra qualifiés, domaines morts/parkés éliminés
+   - **Scoring qualité** (même domaine + `contact@`/`direction@`/`devis@` = top ; `rgpd`/`noreply` écartés) + capture du **téléphone** (relance tel) et des **réseaux sociaux**
+   - Furtivité renforcée (fingerprint WebGL, anti-`webdriver`) + **blocage images/polices** → 3-4× plus rapide
 3. **Qualification IA** — Claude note chaque lead (activité pertinente ? actif ? joignable ?), **rejette** sous le seuil, et extrait des **accroches concrètes** pour la personnalisation.
 4. **Cold email** — Claude rédige un email **unique** : 1ère phrase ancrée dans LEUR réalité, argument adapté au **secteur**, code promo, vouvoiement. Envoyé via **ton SMTP Gmail**.
 5. **Relances** — J+3 puis J+7, ton différent à chaque fois, arrêt automatique si réponse/opt-out.
