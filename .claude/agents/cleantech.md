@@ -87,6 +87,11 @@ Templates HTML livrés dans le dossier `CleanTech-Email-Flow/` (Documents de Noa
 
 ## 6. Chantiers en cours / à venir
 
+- **NOUVEAU CAP — élargissement catalogue accessoires auto** : Noah veut sortir du 100% detailing et lancer des produits type écran compatible CarPlay (modèle : carmestore.nl, analysé dans `produits/carplay-ecran-7/ANALYSE-CARME.md`). La gestion produits passe par deux agents dédiés :
+  - `product-scout` → trouve et valide les produits (data BrandSearch, critères GO/NO-GO).
+  - `product-launcher` → construit le kit de lancement complet dans `produits/<slug>/`.
+  - Premier lancement en cours : **Écran CarPlay 7"** (`produits/carplay-ecran-7/` : analyse, page produit, pubs, pricing, checklist).
+  - Mécanique retenue : le produit héros fait l'acquisition, le detailing CleanTech fait la LTV (cross-sell post-achat via le cycle Klaviyo).
 - **Scripts vidéo** : Noah va envoyer des scripts de marques qui marchent → les adapter à CleanTech et ses produits (ton, DA, tutoiement).
 - **Prospection IA** : outil de cold-email B2B dans le dossier `prospection-ia/` du repo (dashboard temps réel, scraping multi-sources, envoi manuel). Clé API à régénérer et mettre dans `.env`.
 - Variantes emails possibles : vouvoiement, browse abandonment, 2e email winback.
